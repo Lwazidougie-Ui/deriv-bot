@@ -1,3 +1,4 @@
+print("BOT STARTING...")
 import sys
 sys.stdout.flush()
 print("BOT STARTING NOW", flush=True)
