@@ -46,6 +46,7 @@ def detect_trend():
 def support_resistance():
     if len(prices) < 20:
         return None, None
+
     return min(prices[-20:]), max(prices[-20:])
 
 
@@ -75,8 +76,6 @@ def open_trade(ws, direction, price):
     print("Direction:", direction)
     print("Entry:", price)
 
-    # NOTE: This is a demo order structure
-    # Real Deriv trading uses proposal + buy flow
     order = {
         "buy": 1,
         "price": 1,
@@ -93,6 +92,9 @@ def open_trade(ws, direction, price):
 
     ws.send(json.dumps(order))
 
+# =========================
+# STRATEGY
+# =========================
 
 def strategy(ws, price):
     trend = detect_trend()
@@ -112,7 +114,7 @@ def strategy(ws, price):
             open_trade(ws, "PUT", price)
 
 # =========================
-# WEBSOCKET FIXED VERSION
+# WEBSOCKET EVENTS (FIXED)
 # =========================
 
 def on_open(ws):
@@ -156,8 +158,7 @@ def on_message(ws, message):
 def on_error(ws, error):
     print("WS ERROR:", error)
 
-
-# 🔥 FIXED (this was your crash)
+# 🔥 FIXED VERSION (NO CRASH)
 def on_close(ws, *args):
     print("CONNECTION CLOSED:", args)
 
@@ -174,7 +175,3 @@ ws = websocket.WebSocketApp(
 )
 
 ws.run_forever()
-
-
-
-         
