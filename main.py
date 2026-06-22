@@ -1,4 +1,5 @@
 print("BOT STARTING...")
+print("TOKEN FOUND:", TOKEN is not None)
 import sys
 sys.stdout.flush()
 print("BOT STARTING NOW", flush=True)
