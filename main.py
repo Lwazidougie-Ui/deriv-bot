@@ -13,8 +13,8 @@ SYMBOL = "frxXAUUSD"
 
 MAX_TRADES_PER_DAY = 3
 RISK_PER_TRADE = 0.01
-TP_PCT = 0.01   # 1%
-SL_PCT = 0.01   # 1%
+TP_PCT = 0.01
+SL_PCT = 0.01
 
 # =========================
 # STATE
@@ -51,20 +51,14 @@ def detect_trend():
 
     ema200 = ema(prices, 200)
 
-    if prices[-1] > ema200:
-        return "UP"
-    else:
-        return "DOWN"
+    return "UP" if prices[-1] > ema200 else "DOWN"
 
 
 def support_resistance():
     if len(prices) < 20:
         return None, None
 
-    support = min(prices[-20:])
-    resistance = max(prices[-20:])
-
-    return support, resistance
+    return min(prices[-20:]), max(prices[-20:])
 
 
 def rejection_buy(price, support):
@@ -73,14 +67,6 @@ def rejection_buy(price, support):
 
 def rejection_sell(price, resistance):
     return price >= resistance * 0.999
-
-# =========================
-# RISK MANAGEMENT
-# =========================
-
-def calculate_stake(balance, sl_distance):
-    risk_amount = balance * RISK_PER_TRADE
-    return round(risk_amount / sl_distance, 2)
 
 # =========================
 # TRADE CONTROL
@@ -94,7 +80,6 @@ def open_trade(ws, direction, price):
         return
 
     if active_trade is not None:
-        print("Trade already active")
         return
 
     sl = price * (1 - SL_PCT) if direction == "CALL" else price * (1 + SL_PCT)
@@ -138,7 +123,9 @@ def check_exit(price):
     if not active_trade:
         return
 
-    if active_trade["direction"] == "CALL":
+    d = active_trade["direction"]
+
+    if d == "CALL":
         if price >= active_trade["tp"]:
             print("TAKE PROFIT HIT")
             active_trade = None
@@ -146,7 +133,7 @@ def check_exit(price):
             print("STOP LOSS HIT")
             active_trade = None
 
-    if active_trade["direction"] == "PUT":
+    if d == "PUT":
         if price <= active_trade["tp"]:
             print("TAKE PROFIT HIT")
             active_trade = None
@@ -176,20 +163,18 @@ def strategy(ws, price):
     if not trend:
         return
 
-    # UP TREND BUY
     if trend == "UP" and support:
         if rejection_buy(price, support):
             print("BUY SIGNAL")
             open_trade(ws, "CALL", price)
 
-    # DOWN TREND SELL
     if trend == "DOWN" and resistance:
         if rejection_sell(price, resistance):
             print("SELL SIGNAL")
             open_trade(ws, "PUT", price)
 
 # =========================
-# WEBSOCKET
+# WEBSOCKET EVENTS (FIXED)
 # =========================
 
 def on_open(ws):
@@ -227,13 +212,14 @@ def on_message(ws, message):
         check_exit(price)
         strategy(ws, price)
 
-
+# 🔥 FIXED: THIS WAS YOUR ERROR
 def on_error(ws, error):
-    print("Error:", error)
+    print("ERROR:", error)
 
 
-def on_close(ws):
-    print("Connection closed")
+# 🔥 FIXED: COMPATIBLE WITH ALL VERSIONS
+def on_close(ws, *args):
+    print("CONNECTION CLOSED:", args)
 
 # =========================
 # RUN BOT
