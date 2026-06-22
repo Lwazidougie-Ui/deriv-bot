@@ -1,3 +1,7 @@
+import sys
+sys.stdout.flush()
+print("BOT STARTING NOW", flush=True)
+
 import os
 import json
 import websocket
