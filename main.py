@@ -1,15 +1,11 @@
-print("BOT STARTING...")
-print("TOKEN FOUND:", TOKEN is not None)
-import sys
-sys.stdout.flush()
-print("BOT STARTING NOW", flush=True)
-
 import os
 import json
 import websocket
 import threading
 import time
 from datetime import datetime
+
+print("BOT STARTING...")
 
 # =========================
 # CONFIG
@@ -19,15 +15,21 @@ TOKEN = os.getenv("DERIV_TOKEN")
 APP_ID = "1089"
 SYMBOL = "frxXAUUSD"
 
+MAX_TRADES_PER_DAY = 3
+RISK_PER_TRADE = 0.01
+
+print("TOKEN FOUND:", TOKEN is not None)
+
 # =========================
 # STATE
 # =========================
 
 prices = []
 active_trade = None
-ws = None
-heartbeat_thread = None
-stop_heartbeat = False
+trade_count = 0
+current_day = datetime.now().date()
+
+ws_global = None
 
 # =========================
 # INDICATORS
@@ -57,7 +59,6 @@ def detect_trend():
 def support_resistance():
     if len(prices) < 20:
         return None, None
-
     return min(prices[-20:]), max(prices[-20:])
 
 
@@ -68,40 +69,69 @@ def rejection_buy(price, support):
 def rejection_sell(price, resistance):
     return price >= resistance * 0.999
 
+
+# =========================
+# DAILY RESET
+# =========================
+
+def reset_daily():
+    global trade_count, current_day
+
+    if datetime.now().date() != current_day:
+        trade_count = 0
+        current_day = datetime.now().date()
+
+
+# =========================
+# DERIV TRADE FLOW (FIXED)
+# =========================
+
+def send_proposal(ws, direction):
+    """Step 1: request contract proposal"""
+    contract_type = "CALL" if direction == "CALL" else "PUT"
+
+    request = {
+        "proposal": 1,
+        "amount": 1,
+        "basis": "stake",
+        "contract_type": contract_type,
+        "currency": "USD",
+        "duration": 1,
+        "duration_unit": "m",
+        "symbol": SYMBOL
+    }
+
+    ws.send(json.dumps(request))
+
+
+def buy_contract(ws, proposal_id):
+    """Step 2: buy contract using proposal"""
+    ws.send(json.dumps({
+        "buy": proposal_id,
+        "price": 1
+    }))
+
+
 # =========================
 # TRADING LOGIC
 # =========================
 
-def open_trade(ws, direction, price):
-    global active_trade
+def open_trade(ws, direction):
+    global trade_count, active_trade
+
+    if trade_count >= MAX_TRADES_PER_DAY:
+        return
 
     if active_trade is not None:
         return
 
-    active_trade = {
-        "direction": direction,
-        "entry": price
-    }
+    print("\nTRADE SIGNAL:", direction)
 
-    print("\nTRADE SIGNAL")
-    print("Direction:", direction)
-    print("Entry:", price)
+    active_trade = direction
+    trade_count += 1
 
-    order = {
-        "buy": 1,
-        "price": 1,
-        "parameters": {
-            "amount": 1,
-            "basis": "stake",
-            "contract_type": direction,
-            "currency": "USD",
-            "duration": 1,
-            "duration_unit": "m",
-            "symbol": SYMBOL
-        }
-    }
+    send_proposal(ws, direction)
 
-    ws.send(json.dumps(order))
 
 # =========================
 # STRATEGY
@@ -117,45 +147,27 @@ def strategy(ws, price):
     if trend == "UP" and support:
         if rejection_buy(price, support):
             print("BUY SIGNAL")
-            open_trade(ws, "CALL", price)
+            open_trade(ws, "CALL")
 
     if trend == "DOWN" and resistance:
         if rejection_sell(price, resistance):
             print("SELL SIGNAL")
-            open_trade(ws, "PUT", price)
+            open_trade(ws, "PUT")
 
-# =========================
-# HEARTBEAT (KEEP CONNECTION ALIVE)
-# =========================
-
-def heartbeat_loop(ws):
-    global stop_heartbeat
-    while not stop_heartbeat:
-        try:
-            if ws and ws.sock and ws.sock.connected:
-                ws.send(json.dumps({"ping": 1}))
-                print("[HEARTBEAT] Ping sent")
-        except Exception as e:
-            print(f"[HEARTBEAT] Error: {e}")
-        
-        time.sleep(30)
 
 # =========================
 # WEBSOCKET EVENTS
 # =========================
 
 def on_open(ws):
-    global heartbeat_thread, stop_heartbeat
+    global ws_global
+    ws_global = ws
+
     print("Connected to Deriv")
 
     if not TOKEN:
         print("ERROR: Missing DERIV_TOKEN")
         return
-
-    # Start heartbeat thread
-    stop_heartbeat = False
-    heartbeat_thread = threading.Thread(target=heartbeat_loop, args=(ws,), daemon=True)
-    heartbeat_thread.start()
 
     ws.send(json.dumps({
         "authorize": TOKEN
@@ -167,6 +179,7 @@ def on_message(ws, message):
 
     data = json.loads(message)
 
+    # AUTH
     if "authorize" in data:
         print("Authenticated")
 
@@ -175,6 +188,14 @@ def on_message(ws, message):
             "subscribe": 1
         }))
 
+    # PROPOSAL RESPONSE
+    if "proposal" in data:
+        proposal_id = data["proposal"]["id"]
+        print("Proposal received:", proposal_id)
+
+        buy_contract(ws, proposal_id)
+
+    # PRICE DATA
     if "tick" in data:
         price = data["tick"]["quote"]
 
@@ -185,6 +206,7 @@ def on_message(ws, message):
 
         print("Price:", price)
 
+        reset_daily()
         strategy(ws, price)
 
 
@@ -193,16 +215,12 @@ def on_error(ws, error):
 
 
 def on_close(ws, *args):
-    global stop_heartbeat
     print("CONNECTION CLOSED:", args)
-    stop_heartbeat = True
+
 
 # =========================
-# RUN BOT WITH RECONNECT
+# RUN LOOP
 # =========================
-
-retry_count = 0
-max_retry_wait = 60
 
 while True:
     try:
@@ -213,12 +231,9 @@ while True:
             on_error=on_error,
             on_close=on_close
         )
-        
+
         ws.run_forever()
-        
+
     except Exception as e:
-        print(f"[RECONNECT] Connection failed: {e}")
-        retry_count += 1
-        wait_time = min(5 * (2 ** retry_count), max_retry_wait)
-        print(f"[RECONNECT] Retrying in {wait_time}s (attempt {retry_count})...")
-        time.sleep(wait_time)
+        print("RECONNECT ERROR:", e)
+        time.sleep(5)
