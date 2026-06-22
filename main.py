@@ -1,6 +1,8 @@
 import os
 import json
 import websocket
+import threading
+import time
 from datetime import datetime
 
 # =========================
@@ -17,6 +19,9 @@ SYMBOL = "frxXAUUSD"
 
 prices = []
 active_trade = None
+ws = None
+heartbeat_thread = None
+stop_heartbeat = False
 
 # =========================
 # INDICATORS
@@ -114,15 +119,37 @@ def strategy(ws, price):
             open_trade(ws, "PUT", price)
 
 # =========================
-# WEBSOCKET EVENTS (FIXED)
+# HEARTBEAT (KEEP CONNECTION ALIVE)
+# =========================
+
+def heartbeat_loop(ws):
+    global stop_heartbeat
+    while not stop_heartbeat:
+        try:
+            if ws and ws.sock and ws.sock.connected:
+                ws.send(json.dumps({"ping": 1}))
+                print("[HEARTBEAT] Ping sent")
+        except Exception as e:
+            print(f"[HEARTBEAT] Error: {e}")
+        
+        time.sleep(30)
+
+# =========================
+# WEBSOCKET EVENTS
 # =========================
 
 def on_open(ws):
+    global heartbeat_thread, stop_heartbeat
     print("Connected to Deriv")
 
     if not TOKEN:
         print("ERROR: Missing DERIV_TOKEN")
         return
+
+    # Start heartbeat thread
+    stop_heartbeat = False
+    heartbeat_thread = threading.Thread(target=heartbeat_loop, args=(ws,), daemon=True)
+    heartbeat_thread.start()
 
     ws.send(json.dumps({
         "authorize": TOKEN
@@ -158,20 +185,34 @@ def on_message(ws, message):
 def on_error(ws, error):
     print("WS ERROR:", error)
 
-# 🔥 FIXED VERSION (NO CRASH)
+
 def on_close(ws, *args):
+    global stop_heartbeat
     print("CONNECTION CLOSED:", args)
+    stop_heartbeat = True
 
 # =========================
-# RUN BOT
+# RUN BOT WITH RECONNECT
 # =========================
 
-ws = websocket.WebSocketApp(
-    f"wss://ws.derivws.com/websockets/v3?app_id={APP_ID}",
-    on_open=on_open,
-    on_message=on_message,
-    on_error=on_error,
-    on_close=on_close
-)
+retry_count = 0
+max_retry_wait = 60
 
-ws.run_forever()
+while True:
+    try:
+        ws = websocket.WebSocketApp(
+            f"wss://ws.derivws.com/websockets/v3?app_id={APP_ID}",
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close
+        )
+        
+        ws.run_forever()
+        
+    except Exception as e:
+        print(f"[RECONNECT] Connection failed: {e}")
+        retry_count += 1
+        wait_time = min(5 * (2 ** retry_count), max_retry_wait)
+        print(f"[RECONNECT] Retrying in {wait_time}s (attempt {retry_count})...")
+        time.sleep(wait_time)
