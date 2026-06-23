@@ -41,19 +41,32 @@ def on_open(ws):
     ws.send(json.dumps({"authorize": TOKEN}))
 
 def on_message(ws, message):
+    print("RAW:", message[:300], flush=True)
+
     data = json.loads(message)
+
     if "error" in data:
         print(f"DERIV ERROR: {data['error']}", flush=True)
+
     if "authorize" in data:
         print("AUTHENTICATED", flush=True)
-        ws.send(json.dumps({"ticks": SYMBOL, "subscribe": 1}))
+
+        ws.send(json.dumps({
+            "ticks": SYMBOL,
+            "subscribe": 1
+        }))
+
     if "pong" in data:
         print("[HEARTBEAT] Pong received", flush=True)
+
     if "tick" in data:
         price = data["tick"]["quote"]
+
         prices.append(price)
+
         if len(prices) > 500:
             prices.pop(0)
+
         print(f"Price: {price}", flush=True)
 
 def on_error(ws, error):
