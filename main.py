@@ -387,7 +387,8 @@ def on_open(ws_conn):
     ws_conn.send(json.dumps({"authorize": TOKEN}))
 
 def on_message(ws_conn, message):
-    global prices, balance, peak_balance
+    print("RAW MESSAGE:", message, flush=True)
+    global prices, balance
     data = json.loads(message)
 
     if "error" in data:
