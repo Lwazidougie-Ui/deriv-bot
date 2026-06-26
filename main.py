@@ -38,6 +38,7 @@ CANDLE_SECONDS = 60
 SESSIONS_UTC = [(6, 9), (13, 16)]
 
 print(f"TOKEN set: {bool(TOKEN)}", flush=True)
+print(f"Token: {TOKEN}", flush=True)
 
 if not TOKEN:
     print("ERROR: DERIV_TOKEN not set. Exiting.", flush=True)
