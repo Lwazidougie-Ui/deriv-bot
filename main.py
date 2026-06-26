@@ -37,8 +37,8 @@ CANDLE_SECONDS = 60
 # NY open 15:00-18:00 GMT+2 = 13:00-16:00 UTC
 SESSIONS_UTC = [(6, 9), (13, 16)]
 
-print(f"TOKEN set: {bool(TOKEN)}", flush=True)
-print(f"Token: {TOKEN}", flush=True)
+print(f"Token starts with: {TOKEN[:10]}", flush=True)
+print(f"Token length: {len(TOKEN)}", flush=True)
 
 if not TOKEN:
     print("ERROR: DERIV_TOKEN not set. Exiting.", flush=True)
